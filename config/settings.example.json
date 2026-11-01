@@ -1,0 +1,46 @@
+{
+ "_comment": "config/settings.json にコピーして書き換える。パスワード・APIキーはここに書かず、*_env に環境変数の名前を書き、値は環境変数か env_file（既定 .env）に置く。",
+ "env_file": ".env",
+ "codex": {
+  "_comment": "Codex CLI（ChatGPT の契約でログイン済み）。bin が空なら PATH の codex。model が空なら Codex の既定のモデル",
+  "bin": "",
+  "model": ""
+ },
+ "llm": {
+  "_comment": "keywords.py（検索語の候補）と pagegen.py（ページの下書き）が使うローカルの LLM（Ollama）",
+  "ollama_url": "http://127.0.0.1:11434",
+  "model": "gemma4:12b-it-qat"
+ },
+ "publish": {
+  "_comment": "method: ftps（レンタルサーバーへ）／dir（手元のフォルダへ写す）／none（outputs/ を見るだけ）。{token} は推測されにくい番号に置き換わる",
+  "method": "none",
+  "host_env": "FTP_HOST",
+  "user_env": "FTP_USER",
+  "password_env": "FTP_PASS",
+  "remote_dir": "/public_html/kmention-{token}",
+  "dir": "",
+  "public_url": "https://example.com/kmention-{token}/",
+  "noindex": true
+ },
+ "mail": {
+  "_comment": "週1回の要約メール。to が空なら送らない。465 は SSL、587 は STARTTLS",
+  "smtp_host": "smtp.gmail.com",
+  "smtp_port": 465,
+  "user": "",
+  "from": "",
+  "to": [],
+  "password_env": "SMTP_PASSWORD"
+ },
+ "google_ads": {
+  "_comment": "keywords.py の検索数（キーワードプランナー）。google-ads.yaml の場所と、広告アカウントのお客様ID",
+  "yaml": "",
+  "customer_id": ""
+ },
+ "search_console": {
+  "_comment": "keywords.py の順位（任意）。authorized_user_json は client_id・client_secret・refresh_token を持つ JSON（webmasters.readonly 以上）",
+  "authorized_user_json": "",
+  "module_dir": ""
+ },
+ "aeo_php": "",
+ "playwright_python": ""
+}

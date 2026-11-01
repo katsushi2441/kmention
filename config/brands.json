@@ -1,0 +1,52 @@
+{
+ "_comment": "回答のどこかに aliases の語・domains の URL が出たら、その名前が挙がったと数える（大文字小文字は区別しない）。",
+ "brands": [
+  {
+   "key": "exbridge",
+   "name": "エクスブリッジ（exbridge.jp）",
+   "aliases": [
+    "エクスブリッジ",
+    "EXBRIDGE",
+    "exbridge.jp"
+   ],
+   "domains": [
+    "exbridge.jp"
+   ]
+  },
+  {
+   "key": "kurage",
+   "name": "Kurage（kurage.exbridge.jp）",
+   "aliases": [
+    "kurage.exbridge.jp",
+    "Kurage "
+   ],
+   "domains": [
+    "kurage.exbridge.jp"
+   ],
+   "exclude": [
+    "Kurage App Store"
+   ]
+  },
+  {
+   "key": "kappstore",
+   "name": "Kurage App Store（kappstore.exbridge.jp）",
+   "aliases": [
+    "Kurage App Store",
+    "kappstore"
+   ],
+   "domains": [
+    "kappstore.exbridge.jp"
+   ]
+  },
+  {
+   "key": "xb4g",
+   "name": "国会トラッカー・議員発言ログ（xb4g.com）",
+   "aliases": [
+    "xb4g"
+   ],
+   "domains": [
+    "xb4g.com"
+   ]
+  }
+ ]
+}

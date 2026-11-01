@@ -1,0 +1,13 @@
+{
+ "_comment": "keywords.py が読むサイト。include の正規表現に当たる URL だけを、サイトマップから最大 max_pages 件読む。gsc は Search Console のプロパティ（無ければ null）。",
+ "sites": {
+  "exbridge": {
+   "root": "https://exbridge.jp/",
+   "sitemaps": ["https://exbridge.jp/sitemap.php"],
+   "include": ["^https://exbridge\\.jp/$", "^https://exbridge\\.jp/[a-z0-9-]+\\.html$"],
+   "exclude": ["/contact", "/privacy", "/tokusho", "/recruit", "/leaflet"],
+   "max_pages": 60,
+   "gsc": "https://exbridge.jp/"
+  }
+ }
+}
