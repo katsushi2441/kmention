@@ -190,7 +190,7 @@ header{{background:var(--paper);border-bottom:1px solid var(--line)}}.wrap{{max-
 h1{{font-size:clamp(20px,3vw,26px);margin:14px 0 4px}}.lead{{color:var(--sub);font-size:14px;margin:0 0 12px}}
 .sum{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:10px 0 18px}}
 .sum div{{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px 12px}}.sum b{{display:block;font-size:22px;color:var(--teal)}}.sum span{{font-size:13px;color:var(--sub)}}
-.grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr));gap:12px}}
 .q{{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}}
 .q h2{{font-size:15px;line-height:1.55;margin:6px 0}}.meta{{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:13px}}
 .cat{{background:var(--teal-l);color:var(--teal);border-radius:999px;padding:0 8px;font-weight:700}}.hit{{color:var(--teal)}}.miss{{color:var(--red)}}.prev{{color:var(--sub)}}.vol{{color:var(--sub);font-size:12px}}

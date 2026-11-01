@@ -326,7 +326,7 @@ body{{margin:0;background:#f6f8f9;color:#16232b;font-family:"Noto Sans JP","Hira
 header{{background:#fff;border-bottom:1px solid #dfe6ea}}.wrap{{max-width:1080px;margin:0 auto;padding:12px 16px}}
 .brand{{display:flex;align-items:center;gap:10px;text-decoration:none;color:#16232b;font-weight:800}}.brand img{{width:40px;height:auto;object-fit:contain}}
 h1{{font-size:clamp(20px,3vw,26px);margin:14px 0 4px}}.lead{{color:#56656f;font-size:14px}}
-.grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr));gap:12px}}
 .k{{background:#fff;border:1px solid #dfe6ea;border-left:5px solid #9aa8b1;border-radius:12px;padding:10px 14px;min-width:0}}.k.new{{border-left-color:#b3261e}}.k.fix{{border-left-color:#c17a00}}.k.ok{{border-left-color:#0a7a6e}}
 .top{{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline}}.top b{{font-size:16px}}.vol{{color:#0a7a6e;font-weight:800}}.act{{font-size:13px;font-weight:800}}
 ul{{margin:6px 0;padding-left:1.2em;font-size:13.5px;overflow-wrap:anywhere}}.sub{{margin:0;font-size:12.5px;color:#56656f;overflow-wrap:anywhere}}
