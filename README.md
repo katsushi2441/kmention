@@ -49,6 +49,19 @@ cron の例（毎週月曜7時）:
 0 7 * * 1  cd /opt/kmention && /usr/bin/python3 kmention.py weekly >> data/weekly.log 2>&1
 ```
 
+## Gemini でも測る（任意）
+
+`config/settings.json` の `gemini.enabled` を `true` にし、Gemini の API キーを `GEMINI_API_KEY`（環境変数か env_file）に置くと、`weekly` のときに同じ質問を Gemini（Google 検索つき）にも聞き、`outputs/gemini.html` に記録します。ChatGPT 側の画面と互いにリンクします。
+
+```bash
+python3 kmention.py run --engine gemini     # Gemini の回だけ
+python3 kmention.py build --engine gemini
+```
+
+- 当社が挙がったかの判定は、ChatGPT 側と同じ規則（名前とドメインの照合。AI は使わない）です
+- gemini-2.5-flash の無料枠は1モデル1日20回（2026年11月の実測）です。検索数の多い順に `gemini.max_questions` 問（既定18）だけ聞き、1日の上限に当たったらその回を止めます。支払いを設定すれば、Google 検索つきの質問を1日1,500回まで使えます
+- 記録するのは Gemini の API が Google 検索を使って答えたもので、gemini.google.com の画面の答えそのものではありません
+
 ## 強化すべきキーワードの抽出（keywords.py）
 
 ```

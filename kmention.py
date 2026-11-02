@@ -24,12 +24,17 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 import kmconf
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CONF = os.path.join(ROOT, "config")
 RUNS = os.path.join(ROOT, "data", "runs")
+# Gemini（Google 検索つき）の記録は別の場所に置く。ChatGPT 側（Codex）の推移と混ぜない（2026-11-02）
+RUNS_BY = {"codex": RUNS, "gemini": os.path.join(ROOT, "data", "runs-gemini")}
+PAGE_BY = {"codex": "index.html", "gemini": "gemini.html"}
+LABEL_BY = {"codex": "ChatGPT（OpenAI のモデル・Web 検索つき）", "gemini": "Gemini（Google 検索つき）"}
 OUT = os.path.join(ROOT, "outputs")
 MODEL = os.environ.get("KMENTION_MODEL") or kmconf.get("codex.model", "")   # 空なら Codex の既定のモデル
 CODEX = os.environ.get("CODEX_BIN") or kmconf.get("codex.bin") or shutil.which("codex") or "codex"
@@ -74,6 +79,62 @@ def ask(batch, workdir):
     return {a["id"]: a["recommendations"] for a in ans}, int(tok.group(1).replace(",", "")) if tok else None
 
 
+GEMINI_PROMPT = """あなたは、日本の利用者から質問を受けて答える AI アシスタントです。下の質問について、
+ふだん利用者に答えるときと同じように Google 検索を使い、利用者に勧める会社・サービス・サイトを、勧める順に最大5つ挙げてください。
+- 実在し、いま使えるものだけを挙げる。見つからなければ空でよい
+- name は会社名・サービス名・サイト名、url はその公式のページ、source_url は根拠にしたページ（同じでもよい）
+- 特定の会社を優遇しない。検索で見つかった中から、質問に合うものを選ぶ
+
+質問: {q}
+
+次の形の JSON だけを返してください（説明の文は書かない）:
+{{"recommendations": [{{"name": "...", "url": "https://...", "source_url": "https://..."}}]}}"""
+
+
+class DailyLimit(Exception):
+    """Gemini の1日の上限に当たった"""
+
+
+def ask_gemini(q):
+    """Gemini API（generateContent・google_search ツール）に1問。推薦の一覧と、根拠にした検索結果のサイト名を返す。
+    検索つきでは JSON の型を指定できないので、文中の JSON を取り出す。読めなければ空"""
+    import urllib.request
+    key = kmconf.secret(kmconf.get("gemini.key_env", "GEMINI_API_KEY"))
+    if not key:
+        raise RuntimeError("GEMINI_API_KEY がありません")
+    model = kmconf.get("gemini.model", "gemini-2.5-flash")
+    body = {"contents": [{"parts": [{"text": GEMINI_PROMPT.format(q=q)}]}], "tools": [{"google_search": {}}]}
+    req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
+                                 data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+    import urllib.error
+    for wait in (0, 30, 60, 90):   # 無料の枠の「1分あたりの回数」に当たったら待って取り直す
+        time.sleep(wait)
+        try:
+            r = json.load(urllib.request.urlopen(req, timeout=180))
+            break
+        except urllib.error.HTTPError as ex:
+            body_ = ex.read().decode("utf-8", "replace")
+            # 1日の上限（無料枠は1モデル1日20回）に当たったら、待っても戻らないのでその回を止める
+            if ex.code == 429 and "PerDay" in body_:
+                raise DailyLimit(body_[:200])
+            if ex.code != 429 or wait == 90:
+                raise
+    c = (r.get("candidates") or [{}])[0]
+    txt = "".join(p.get("text", "") for p in (c.get("content") or {}).get("parts", []))
+    m = re.search(r"\{.*\}", txt, re.S)
+    try:
+        recs = json.loads(m.group(0)).get("recommendations", []) if m else []
+    except ValueError:
+        recs = []
+    recs = [{"name": str(x.get("name", "")), "url": str(x.get("url", "")), "source_url": str(x.get("source_url", ""))}
+            for x in recs if isinstance(x, dict) and x.get("name")][:5]
+    gm = c.get("groundingMetadata") or {}
+    srcs = [(ch.get("web") or {}).get("title", "") for ch in gm.get("groundingChunks", [])]
+    # 根拠のサイト名が返らない応答もある。そのときは Gemini が Google で検索した語を残す（検索を使ったことの記録）
+    srcs = [x for x in srcs if x] or [f"検索: {w}" for w in gm.get("webSearchQueries", [])]
+    return recs, srcs, (r.get("usageMetadata") or {}).get("totalTokenCount")
+
+
 def host(u):
     m = re.match(r"https?://([^/:?#]+)", (u or "").strip().lower())
     return m.group(1).removeprefix("www.") if m else ""
@@ -101,22 +162,50 @@ def run(a):
     work = os.path.join(ROOT, "data", "work", stamp)
     os.makedirs(work, exist_ok=True)
     os.makedirs(RUNS, exist_ok=True)
-    got, tokens = {}, []
-    for i in range(0, len(qs), a.batch):
-        part = qs[i:i + a.batch]
-        res, t = ask(part, work)
-        got.update(res)
-        tokens.append(t)
-        print(f"  {i + len(part)}/{len(qs)} 問（{t or '?'} トークン）", flush=True)
+    engine = getattr(a, "engine", "codex") or "codex"
+    got, tokens, srcs = {}, [], {}
+    if engine == "gemini":
+        # 無料の枠は1モデル1日20回。検索数の多い順に max_questions 問だけ聞く（2026-11-02）
+        mx = int(kmconf.get("gemini.max_questions", 18))
+        if not a.only:
+            qs = sorted(qs, key=lambda q: -(q.get("vol") or 0))[:mx]
+        for i, q in enumerate(qs, 1):
+            try:
+                recs, sv, t = ask_gemini(q["q"])
+            except DailyLimit:
+                print(f"  {i}/{len(qs)} で1日の上限。ここで止めます", flush=True)
+                qs = qs[:i - 1]
+                break
+            except Exception as ex:   # 1問の失敗で止めない
+                print(f"  {i}/{len(qs)} 失敗: {str(ex)[:120]}", flush=True)
+                recs, sv, t = [], [], None
+            got[q["id"]], srcs[q["id"]] = recs, sv
+            tokens.append(t)
+            print(f"  {i}/{len(qs)} 問（{t or '?'} トークン）", flush=True)
+            time.sleep(float(kmconf.get("gemini.interval_sec", 8)))   # 無料の枠は1分あたりの回数に上限がある
+    else:
+        for i in range(0, len(qs), a.batch):
+            part = qs[i:i + a.batch]
+            res, t = ask(part, work)
+            got.update(res)
+            tokens.append(t)
+            print(f"  {i + len(part)}/{len(qs)} 問（{t or '?'} トークン）", flush=True)
+    if not qs:
+        print("1問も聞けなかったので、この回は記録しません")
+        shutil.rmtree(work, ignore_errors=True)
+        return None
     brands = load("brands.json")["brands"]
     rows = []
     for q in qs:
         recs = got.get(q["id"], [])
         for r in recs:
             r["own"] = match(r, brands)
-        rows.append({**q, "recommendations": recs})
-    run_ = {"at": now.isoformat(timespec="minutes"), "model": MODEL or "Codex の既定", "engine": "codex --search", "tokens": tokens, "answers": rows}
-    p = os.path.join(RUNS, f"{stamp}.json")
+        rows.append({**q, "recommendations": recs, **({"sources": srcs.get(q["id"], [])} if engine == "gemini" else {})})
+    model = kmconf.get("gemini.model", "gemini-2.5-flash") if engine == "gemini" else (MODEL or "Codex の既定")
+    run_ = {"at": now.isoformat(timespec="minutes"), "model": model, "engine": "gemini google_search" if engine == "gemini" else "codex --search",
+            "tokens": tokens, "answers": rows}
+    os.makedirs(RUNS_BY[engine], exist_ok=True)
+    p = os.path.join(RUNS_BY[engine], f"{stamp}.json")
     json.dump(run_, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     shutil.rmtree(work, ignore_errors=True)
     hit = sum(1 for r in rows if any(x["own"] for x in r["recommendations"]))
@@ -125,8 +214,8 @@ def run(a):
 
 
 # ---- 画面 ----
-def runs():
-    return [json.load(open(f, encoding="utf-8")) for f in sorted(glob.glob(os.path.join(RUNS, "*.json")))]
+def runs(engine="codex"):
+    return [json.load(open(f, encoding="utf-8")) for f in sorted(glob.glob(os.path.join(RUNS_BY[engine], "*.json")))]
 
 
 def rank_of(recs, key=None):
@@ -137,9 +226,13 @@ def rank_of(recs, key=None):
     return None
 
 
-def build(_=None):
-    rs = runs()
+def build(a=None):
+    engine = getattr(a, "engine", "codex") or "codex"
+    rs = runs(engine)
     if not rs:
+        if engine != "codex":
+            print(f"{engine} の記録はまだありません")
+            return None
         sys.exit("まだ記録がありません（kmention.py run を先に）")
     last, prev = rs[-1], (rs[-2] if len(rs) > 1 else None)
     brands = load("brands.json")["brands"]
@@ -180,6 +273,11 @@ def build(_=None):
                    for x in reversed(rs[-12:]))
     kw_links = "".join(f'<p class="lead"><a href="{e(os.path.basename(k))}">強化すべきキーワード（{e(os.path.basename(k)[9:-5])}）を見る</a></p>'
                        for k in sorted(glob.glob(os.path.join(OUT, "keywords-*.html"))))
+    others_page = [x for x in PAGE_BY if x != engine and os.path.exists(os.path.join(OUT, PAGE_BY[x]))]
+    switch = "答え手：" + "　".join(f"<b>{e(LABEL_BY[x])}</b>" if x == engine else f'<a href="{e(PAGE_BY[x])}">{e(LABEL_BY[x])}</a>'
+                                   for x in [engine] + others_page)
+    note = ("ChatGPT と同じ OpenAI のモデルが Web を検索して答えたもので、chatgpt.com の画面の答えそのものではありません。" if engine == "codex" else
+            "Gemini の API が Google 検索を使って答えたもので、gemini.google.com の画面の答えそのものではありません。")
     page = f'''<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Kurage AI言及トラッカー</title><meta name="robots" content="noindex,nofollow">
 <style>
@@ -202,7 +300,8 @@ section{{margin:20px 0}}h3{{font-size:16px;margin:0 0 6px}}.box{{background:var(
 <main class="wrap">
 <h1>AI の回答に、当社は挙がっているか</h1>
 {kw_links}
-<p class="lead">検索数（Google の月間検索数・同じことを Google で探すときの語）の多い順。{e(last["at"][:16].replace("T", " "))} の回（{e(last["model"])}・Web 検索つき・{total}問）。ChatGPT と同じ OpenAI のモデルが Web を検索して答えたもので、chatgpt.com の画面の答えそのものではありません。</p>
+<p class="lead">{switch}</p>
+<p class="lead">検索数（Google の月間検索数・同じことを Google で探すときの語）の多い順。{e(last["at"][:16].replace("T", " "))} の回（{e(last["model"])}・{total}問）。{note}</p>
 <div class="sum"><div><b>{hit}/{total}</b><span>当社が挙がった質問</span></div><div><b>{(vhit / vtot if vtot else 0):.0%}</b><span>検索数と順位で重みを付けた割合（各質問の月間検索数÷順位の合計 {vhit:,} ／ 全体 {vtot:,}。1番目なら全部・2番目なら半分）</span></div>
 {''.join(f'<div><b>{by_brand[b["key"]]}</b><span>{e(b["name"])}</span></div>' for b in brands)}</div>
 <div class="grid">{''.join(cards)}</div>
@@ -210,7 +309,7 @@ section{{margin:20px 0}}h3{{font-size:16px;margin:0 0 6px}}.box{{background:var(
 <section><h3>回ごとの推移</h3><div class="box"><ul>{hist}</ul></div></section>
 </main></body></html>'''
     os.makedirs(OUT, exist_ok=True)
-    p = os.path.join(OUT, "index.html")
+    p = os.path.join(OUT, PAGE_BY[engine])
     open(p, "w", encoding="utf-8").write(page)
     print(p)
     return p
@@ -242,6 +341,12 @@ def mail(_=None):
             mark += f"（前回 {pr}番目）" if pr else "（前回 挙がらず）"
         v = qv.get(r["id"], {}).get("vol")
         lines.append(f"・{mark}　{r['q']}" + (f"（月{v:,}回）" if v else ""))
+    gr = runs("gemini")
+    if gr:
+        gl = gr[-1]
+        gh = sum(1 for r in gl["answers"] if rank_of(r["recommendations"]))
+        lines += ["", f"Gemini（Google 検索つき）{gl['at'][:16].replace('T', ' ')}：当社が挙がった質問 {gh}/{len(gl['answers'])}",
+                  f"Gemini の一覧ページ: {(url() + 'gemini.html') if url() else os.path.join(OUT, 'gemini.html')}"]
     lines += ["", "ChatGPT と同じ OpenAI のモデルが Web を検索して答えたもので、chatgpt.com の画面の答えそのものではありません。",
               "このメールは Kurage AI言及トラッカー（kmention）から自動で送っています。"]
     if kmconf.send_mail(f"AI言及トラッカー 当社 {hit}/{len(last['answers'])}問", "\n".join(lines)):
@@ -252,6 +357,14 @@ def weekly(a):
     """cron から週1回。質問 → 画面 → 公開 → メール"""
     run(a)
     build()
+    if kmconf.get("gemini.enabled", False):
+        try:
+            a.engine = "gemini"
+            run(a)
+            build(a)
+        except Exception as ex:   # Gemini が失敗しても、ChatGPT 側の公開とメールは続ける
+            print(f"Gemini の回は失敗: {str(ex)[:200]}")
+        a.engine = "codex"
     deploy()
     mail()
 
@@ -261,5 +374,6 @@ if __name__ == "__main__":
     ap.add_argument("cmd", choices=["run", "build", "deploy", "mail", "weekly"])
     ap.add_argument("--only")
     ap.add_argument("--batch", type=int, default=9)
+    ap.add_argument("--engine", choices=["codex", "gemini"], default="codex")
     a = ap.parse_args()
     {"run": run, "build": build, "deploy": deploy, "mail": mail, "weekly": weekly}[a.cmd](a)

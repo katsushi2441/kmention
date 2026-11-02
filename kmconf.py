@@ -108,9 +108,9 @@ def publish(files):
 
 
 def outputs_to_publish():
-    """outputs/ の画面（index.html・keywords-*.html・pages/*.html）"""
+    """outputs/ の画面（index.html・gemini.html・keywords-*.html・pages/*.html）"""
     out = os.path.join(ROOT, "outputs")
-    fs = [os.path.join(out, "index.html")] + glob.glob(os.path.join(out, "keywords-*.html")) + glob.glob(os.path.join(out, "pages", "*.html"))
+    fs = [os.path.join(out, "index.html"), os.path.join(out, "gemini.html")] + glob.glob(os.path.join(out, "keywords-*.html")) + glob.glob(os.path.join(out, "pages", "*.html"))
     return [(p, os.path.relpath(p, out)) for p in fs if os.path.exists(p)]
 
 

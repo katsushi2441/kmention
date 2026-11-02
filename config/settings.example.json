@@ -42,5 +42,13 @@
   "module_dir": ""
  },
  "aeo_php": "",
- "playwright_python": ""
+ "playwright_python": "",
+ "gemini": {
+  "_comment": "Gemini（Google 検索つき）でも同じ質問を聞いて記録する（weekly のとき）。APIキーは key_env の名前の環境変数か env_file に置く。gemini-2.5-flash の無料枠は1モデル1日20回（2026-11 実測）なので、検索数の多い順に max_questions 問だけ聞く。支払いを設定すれば Google 検索つきは1日1,500回まで使える。1分あたりの回数にも上限があるので interval_sec をあける",
+  "enabled": false,
+  "model": "gemini-2.5-flash",
+  "key_env": "GEMINI_API_KEY",
+  "interval_sec": 15,
+  "max_questions": 18
+ }
 }
